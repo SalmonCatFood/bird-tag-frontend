@@ -73,6 +73,8 @@ def handler(event, context):
         tags = item.get('tags', {})
         file_type = item.get('file_type')
         upload_timestamp = item.get('upload_timestamp')
+        s3_url = item.get('s3_url')
+        additional_metadata = item.get('additional_metadata', {})
 
         if not user_id or not file_id:
             logger.warning(f"Missing user_id or file_id: user_id={user_id}, file_id={file_id}")
@@ -80,14 +82,19 @@ def handler(event, context):
 
         # 转换 tags 中的 Decimal 类型
         tags = convert_decimals(tags) if tags else {}
+        # 转换 additional_metadata 中的 Decimal 类型
+        additional_metadata = convert_decimals(additional_metadata) if additional_metadata else {}
 
+        # 构建完整的 payload，包含所有字段（除了 user_id）
         payload = {
             'type': 'FILE_UPDATE',
             'file_id': file_id,
             'file_type': file_type,
             'thumbnail_url': thumbnail_url,
             'tags': tags,
-            'upload_timestamp': upload_timestamp
+            'upload_timestamp': upload_timestamp,
+            's3_url': s3_url,
+            'additional_metadata': additional_metadata
         }
 
         logger.info(f"Processing update for file_id={file_id}, user_id={user_id}")

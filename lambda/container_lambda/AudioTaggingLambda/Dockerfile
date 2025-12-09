@@ -38,8 +38,5 @@ RUN mkdir -p /tmp/numba_cache
 
 COPY lambda_handler.py ${LAMBDA_TASK_ROOT}
 
-ENV REGION="us-east-1" \
-    AUDIO_BUCKET="zaii0001-a4-audio" \
-    DDB_TABLE="zaii0001-A4-Metadata"
 
-CMD ["lambda_handler.lambda_handler"]
+CMD ["lambda_handler.handler"]

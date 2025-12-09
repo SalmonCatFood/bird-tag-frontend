@@ -40,11 +40,29 @@ def generate_policy(principal_id, effect, resource_arn, context=None):
     return policy
 
 def handler(event, context):
+    """
+    Authorizer for both REST API and WebSocket API
+    - REST API: token from Authorization header (Bearer token)
+    - WebSocket: token from queryStringParameters
+    """
     print(f"[DEBUG] Event: {json.dumps(event)}")
     try:
-        token = (event.get("queryStringParameters") or {}).get("token")
+        token = None
+        
+        # Try to get token from Authorization header (REST API)
+        headers = event.get("headers", {}) or {}
+        # API Gateway may lowercase headers
+        auth_header = headers.get("Authorization") or headers.get("authorization") or ""
+        
+        if auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "").strip()
+        
+        # Fallback: try query string (WebSocket API)
         if not token:
-            raise ValueError("Missing token")
+            token = (event.get("queryStringParameters") or {}).get("token")
+        
+        if not token:
+            raise ValueError("Missing token in Authorization header or query string")
 
         payload = verify_jwt(token)
         user_id = payload.get("sub") or payload.get("user_id") or "unknown"

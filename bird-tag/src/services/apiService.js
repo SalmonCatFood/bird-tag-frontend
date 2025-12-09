@@ -114,15 +114,30 @@ class ApiService {
 
   /**
    * List user's files
-   * @param {object} params - Query parameters
+   * @param {object} params - Query parameters (optional, currently not used)
    * @returns {Promise<Array>}
    */
   async listFiles(params = {}) {
     try {
-      const response = await this.api.get('/files', { params })
+      const response = await this.api.get('/get-files', { params })
       return response.data
     } catch (error) {
       console.error('List files error:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get card details for a specific file
+   * @param {string} fileId
+   * @returns {Promise<object>}
+   */
+  async getCardDetails(fileId) {
+    try {
+      const response = await this.api.get(`/get-card-details/${fileId}`)
+      return response.data
+    } catch (error) {
+      console.error('Get card details error:', error)
       throw error
     }
   }

@@ -1,5 +1,5 @@
 <template>
-  <div class="file-card">
+  <div class="file-card" @click="navigateToDetails">
     <!-- Thumbnail or Icon -->
     <div class="file-thumbnail">
       <img
@@ -73,6 +73,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 const props = defineProps({
   file: {
@@ -80,6 +81,14 @@ const props = defineProps({
     required: true,
   },
 })
+
+const router = useRouter()
+
+const navigateToDetails = () => {
+  if (props.file.file_id) {
+    router.push(`/card/${props.file.file_id}`)
+  }
+}
 
 const imageError = ref(false)
 
@@ -175,6 +184,7 @@ const copyId = async () => {
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: transform 0.3s, box-shadow 0.3s;
+  cursor: pointer;
 }
 
 .file-card:hover {

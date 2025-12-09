@@ -84,7 +84,7 @@
         <section class="files-section">
           <div class="section-header">
             <h2>Your Files</h2>
-            <button @click="loadFiles" class="btn btn-secondary btn-sm">
+            <button @click="loadFiles(true)" class="btn btn-secondary btn-sm" :disabled="loading">
               <span>🔄</span> Refresh
             </button>
           </div>
@@ -156,6 +156,9 @@ const apiError = ref('')
 
 let unsubscribeWsMessage = null
 let unsubscribeWsConnection = null
+let isLoadingFiles = false  // 防止重复请求
+let lastLoadTime = 0  // 上次加载时间
+const MIN_LOAD_INTERVAL = 2000  // 最小加载间隔（2秒）
 
 const wsStatusText = computed(() => {
   switch (wsStatus.value) {
@@ -175,12 +178,29 @@ const handleSignOut = () => {
   authService.globalSignOut()
 }
 
-const loadFiles = async () => {
+const loadFiles = async (force = false) => {
+  // 防止重复请求
+  if (isLoadingFiles) {
+    console.log('Files are already being loaded, skipping...')
+    return
+  }
+  
+  // 防止频繁请求（除非强制刷新）
+  const now = Date.now()
+  if (!force && (now - lastLoadTime) < MIN_LOAD_INTERVAL) {
+    console.log('Load request too soon, skipping...')
+    return
+  }
+  
+  isLoadingFiles = true
   loading.value = true
   apiError.value = ''
+  lastLoadTime = now
+  
   try {
     const filesList = await apiService.listFiles()
     files.value = filesList
+    console.log(`Loaded ${filesList.length} files`)
   } catch (error) {
     console.error('Failed to load files:', error)
     if (error.response?.status === 0 || error.code === 'ERR_NETWORK') {
@@ -193,6 +213,7 @@ const loadFiles = async () => {
     }
   } finally {
     loading.value = false
+    isLoadingFiles = false
   }
 }
 
@@ -295,23 +316,30 @@ const handleWebSocketConnection = (status) => {
 }
 
 onMounted(async () => {
+  console.log('[Dashboard] Component mounted, initializing...')
+  
   try {
     // Get user info
     const session = await authService.getUserSession()
     userEmail.value = session.user.email || 'User'
+    console.log('[Dashboard] User session loaded:', userEmail.value)
     
-    // Load files
+    // Load files (only once on mount)
+    console.log('[Dashboard] Loading files...')
     await loadFiles()
     
     // Connect WebSocket
+    console.log('[Dashboard] Connecting WebSocket...')
     await websocketService.connect()
     wsStatus.value = websocketService.getStatus()
     
     // Subscribe to WebSocket events
     unsubscribeWsMessage = websocketService.onMessage(handleWebSocketMessage)
     unsubscribeWsConnection = websocketService.onConnectionChange(handleWebSocketConnection)
+    
+    console.log('[Dashboard] Initialization complete')
   } catch (error) {
-    console.error('Dashboard initialization error:', error)
+    console.error('[Dashboard] Initialization error:', error)
     if (error.message?.includes('No user found') || error.message?.includes('Session')) {
       router.push('/login')
     }

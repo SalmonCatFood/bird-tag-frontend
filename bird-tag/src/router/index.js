@@ -10,6 +10,7 @@ import authService from '@/services/authService'
 import LoginView from '@/views/LoginView.vue'
 import AuthCallbackView from '@/views/AuthCallbackView.vue'
 import DashboardView from '@/views/DashboardView.vue'
+import CardDetailsView from '@/views/CardDetailsView.vue'
 
 const routes = [
   {
@@ -31,6 +32,12 @@ const routes = [
     path: '/dashboard',
     name: 'Dashboard',
     component: DashboardView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/card/:fileId',
+    name: 'CardDetails',
+    component: CardDetailsView,
     meta: { requiresAuth: true },
   },
   {
