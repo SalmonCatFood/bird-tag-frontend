@@ -75,6 +75,9 @@ def handler(event, context):
         upload_timestamp = item.get('upload_timestamp')
         s3_url = item.get('s3_url')
         additional_metadata = item.get('additional_metadata', {})
+        tags_timestemp = item.get('tags_timestemp')
+        annotated_output_url = item.get('annotated_output_url')
+
 
         if not user_id or not file_id:
             logger.warning(f"Missing user_id or file_id: user_id={user_id}, file_id={file_id}")
@@ -94,7 +97,9 @@ def handler(event, context):
             'tags': tags,
             'upload_timestamp': upload_timestamp,
             's3_url': s3_url,
-            'additional_metadata': additional_metadata
+            'additional_metadata': additional_metadata,
+            'tags_timestemp': tags_timestemp,
+            'annotated_output_url': annotated_output_url
         }
 
         logger.info(f"Processing update for file_id={file_id}, user_id={user_id}")

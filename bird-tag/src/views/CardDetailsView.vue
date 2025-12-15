@@ -22,11 +22,27 @@
         <!-- File Preview Section -->
         <section class="preview-section">
           <div class="preview-container">
+            <!-- Toggle Switch for Original/Annotated (only for video) -->
+            <div v-if="(fileData.file_type === 'video' || fileData.file_type === 'Video') && hasAnnotatedFile" class="toggle-container">
+              <label class="toggle-label">
+                <span class="toggle-text">Show Annotated Video</span>
+                <div class="toggle-wrapper">
+                  <input
+                    type="checkbox"
+                    v-model="showAnnotated"
+                    class="toggle-switch"
+                    id="annotated-toggle"
+                  />
+                  <label for="annotated-toggle" class="toggle-slider"></label>
+                </div>
+              </label>
+            </div>
+
             <!-- Image Preview -->
             <div v-if="fileData.file_type === 'image' || fileData.file_type === 'Image'" class="media-preview">
               <img
-                v-if="fileData.s3_url"
-                :src="fileData.s3_url"
+                v-if="currentMediaUrl"
+                :src="currentMediaUrl"
                 :alt="fileData.file_id"
                 class="preview-image"
                 @error="handleImageError"
@@ -48,11 +64,12 @@
             <!-- Video Preview -->
             <div v-else-if="fileData.file_type === 'video' || fileData.file_type === 'Video'" class="media-preview">
               <video
-                v-if="fileData.s3_url"
-                :src="fileData.s3_url"
+                v-if="currentMediaUrl"
+                :src="currentMediaUrl"
                 controls
                 class="preview-video"
                 @error="handleVideoError"
+                :key="currentMediaUrl"
               >
                 Your browser does not support the video tag.
               </video>
@@ -72,13 +89,14 @@
 
             <!-- Audio Preview -->
             <div v-else-if="fileData.file_type === 'audio' || fileData.file_type === 'Audio'" class="media-preview">
-              <div v-if="fileData.s3_url" class="audio-player-container">
+              <div v-if="currentMediaUrl" class="audio-player-container">
                 <div class="audio-icon">🎵</div>
                 <audio
-                  :src="fileData.s3_url"
+                  :src="currentMediaUrl"
                   controls
                   class="preview-audio"
                   @error="handleAudioError"
+                  :key="currentMediaUrl"
                 >
                   Your browser does not support the audio tag.
                 </audio>
@@ -166,6 +184,12 @@
             </p>
           </div>
 
+          <!-- Tags Timestamp Section -->
+          <div v-if="hasTagsTimestamp" class="metadata-section">
+            <h3>Tags Timestamp</h3>
+            <pre class="metadata-json">{{ formatMetadata(fileData.tags_timestemp) }}</pre>
+          </div>
+
           <!-- Additional Metadata Section -->
           <div v-if="hasAdditionalMetadata" class="metadata-section">
             <h3>Additional Metadata</h3>
@@ -180,6 +204,13 @@
               class="btn btn-primary"
             >
               <span>🔗</span> Open Original File
+            </button>
+            <button
+              v-if="fileData.annotated_output_url"
+              @click="openAnnotated"
+              class="btn btn-primary"
+            >
+              <span>🎬</span> Open Annotated File
             </button>
             <button
               v-if="fileData.thumbnail_url"
@@ -225,6 +256,7 @@ const fileData = ref({})
 const loading = ref(true)
 const error = ref('')
 const fileId = ref('')
+const showAnnotated = ref(false)
 
 const hasTags = computed(() => {
   return fileData.value.tags && Object.keys(fileData.value.tags).length > 0
@@ -233,6 +265,25 @@ const hasTags = computed(() => {
 const hasAdditionalMetadata = computed(() => {
   return fileData.value.additional_metadata && 
          Object.keys(fileData.value.additional_metadata).length > 0
+})
+
+const hasTagsTimestamp = computed(() => {
+  return fileData.value.tags_timestemp && 
+         (Array.isArray(fileData.value.tags_timestemp) ? fileData.value.tags_timestemp.length > 0 : 
+          Object.keys(fileData.value.tags_timestemp).length > 0)
+})
+
+const hasAnnotatedFile = computed(() => {
+  return !!fileData.value.annotated_output_url
+})
+
+const currentMediaUrl = computed(() => {
+  // For video files, use annotated if toggle is on, otherwise use original
+  if ((fileData.value.file_type === 'video' || fileData.value.file_type === 'Video') && hasAnnotatedFile.value) {
+    return showAnnotated.value ? fileData.value.annotated_output_url : fileData.value.s3_url
+  }
+  // For other file types, always use original
+  return fileData.value.s3_url
 })
 
 const isProcessing = computed(() => {
@@ -306,6 +357,29 @@ const openOriginal = () => {
 const openThumbnail = () => {
   if (fileData.value.thumbnail_url) {
     window.open(fileData.value.thumbnail_url, '_blank')
+  }
+}
+
+const openAnnotated = () => {
+  if (fileData.value.annotated_output_url) {
+    const url = fileData.value.annotated_output_url
+    console.log('Opening annotated file URL:', url)
+    
+    // 尝试打开 URL
+    const newWindow = window.open(url, '_blank')
+    
+    // 检查是否成功打开（可能被弹窗阻止）
+    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+      console.error('Failed to open annotated file. URL:', url)
+      alert('Failed to open annotated file. Please check the browser console for details.')
+    } else {
+      // 监听新窗口的错误（如果可能）
+      newWindow.addEventListener('error', (e) => {
+        console.error('Error loading annotated file:', e)
+      })
+    }
+  } else {
+    console.warn('No annotated_output_url available')
   }
 }
 
@@ -689,6 +763,73 @@ section {
   line-height: 1.6;
   color: #333;
   margin: 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.toggle-container {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  user-select: none;
+}
+
+.toggle-text {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #333;
+}
+
+.toggle-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.toggle-switch {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 26px;
+  background: #ccc;
+  border-radius: 13px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.3s;
+}
+
+.toggle-switch:checked + .toggle-slider {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.toggle-switch:checked + .toggle-slider::before {
+  transform: translateX(24px);
 }
 
 .actions-section {
