@@ -103,7 +103,7 @@ def handler(event, context):
         conf = round(d.get('confidence', 0.0), 2)
         # 对于 tags，使用最高置信度
         tags[name] = max(tags.get(name, 0.0), conf)
-        # 保存所有检测片段到 additional_metadata
+        # 保存所有检测片段到 tags_timestemp
         segments.append({
             "start_time": format_timestamp(d.get('start_time', 0.0)),
             "end_time":   format_timestamp(d.get('end_time', 0.0)),
@@ -138,25 +138,20 @@ def handler(event, context):
             ":u":    {"S": now_iso},
         }
 
-        # 如果有检测片段，添加到 additional_metadata
-        if segments:
-            # 将 segments 转换为 DynamoDB 格式
-            segments_list = []
-            for seg in segments:
-                segments_list.append({
-                    "M": {
-                        "start_time": {"S": seg["start_time"]},
-                        "end_time":   {"S": seg["end_time"]},
-                        "species":    {"S": seg["species"]},
-                        "confidence": {"N": str(seg["confidence"])}
-                    }
-                })
-            update_expression_parts.append("additional_metadata = :am")
-            expression_attribute_values[":am"] = {
+        # 将 segments 列表写入 tags_timestemp 字段
+        # 将 segments 转换为 DynamoDB 列表格式
+        segments_list = []
+        for seg in segments:
+            segments_list.append({
                 "M": {
-                    "segments": {"L": segments_list}
+                    "start_time": {"S": seg["start_time"]},
+                    "end_time":   {"S": seg["end_time"]},
+                    "species":    {"S": seg["species"]},
+                    "confidence": {"N": str(seg["confidence"])}
                 }
-            }
+            })
+        update_expression_parts.append("tags_timestemp = :tt")
+        expression_attribute_values[":tt"] = {"L": segments_list}
 
         ddb_client.update_item(
             TableName=METADATA_TABLE,

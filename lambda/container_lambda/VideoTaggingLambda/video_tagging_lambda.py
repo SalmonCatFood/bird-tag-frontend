@@ -359,11 +359,23 @@ def handler(event, context):
 
     if os.path.exists(tmp_annotated_video_path):
         try:
+            # 根据文件扩展名确定 ContentType
+            video_content_type_map = {
+                'mp4': 'video/mp4',
+                'webm': 'video/webm',
+                'mov': 'video/quicktime',
+                'avi': 'video/x-msvideo'
+            }
+            video_content_type = video_content_type_map.get(ext.lower(), 'video/mp4')
+            
             s3_client.upload_file(
                 tmp_annotated_video_path,
                 video_bucket_for_output,
                 annotated_video_key,
-                ExtraArgs={'ContentType': f'video/{ext}'}
+                ExtraArgs={
+                    'ContentType': video_content_type,
+                    'ContentDisposition': 'inline'  # 确保在浏览器中播放而不是下载
+                }
             )
             print(f"[INFO] Annotated video uploaded: s3://{video_bucket_for_output}/{annotated_video_key}")
 
@@ -400,8 +412,8 @@ def handler(event, context):
         timestemp_list.append({
             "M": {
                 "species": {"S": record["species"]},
-                "start": {"S": record["start"]},
-                "end": {"S": record["end"]}
+                "start_time": {"S": record["start"]},
+                "end_time": {"S": record["end"]}
             }
         })
 

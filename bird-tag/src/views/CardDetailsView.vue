@@ -18,114 +18,231 @@
 
     <!-- Main Content -->
     <main class="details-main" v-if="!loading && !error">
-      <div class="content-wrapper">
-        <!-- File Preview Section -->
-        <section class="preview-section">
-          <div class="preview-container">
-            <!-- Toggle Switch for Original/Annotated (only for video) -->
-            <div v-if="(fileData.file_type === 'video' || fileData.file_type === 'Video') && hasAnnotatedFile" class="toggle-container">
-              <label class="toggle-label">
-                <span class="toggle-text">Show Annotated Video</span>
-                <div class="toggle-wrapper">
-                  <input
-                    type="checkbox"
-                    v-model="showAnnotated"
-                    class="toggle-switch"
-                    id="annotated-toggle"
-                  />
-                  <label for="annotated-toggle" class="toggle-slider"></label>
-                </div>
-              </label>
-            </div>
-
-            <!-- Image Preview -->
-            <div v-if="fileData.file_type === 'image' || fileData.file_type === 'Image'" class="media-preview">
-              <img
-                v-if="currentMediaUrl"
-                :src="currentMediaUrl"
-                :alt="fileData.file_id"
-                class="preview-image"
-                @error="handleImageError"
-              />
-              <div v-else-if="fileData.thumbnail_url" class="thumbnail-fallback">
-                <img
-                  :src="fileData.thumbnail_url"
-                  :alt="fileData.file_id"
-                  class="preview-thumbnail"
+      <!-- Unified Media Preview Section -->
+      <section class="preview-section">
+        <!-- Header with Toggle -->
+        <div class="preview-header">
+          <div class="header-left">
+            <h2>{{ showAnnotated ? '🏷️ Annotated File' : '📁 Original File' }}</h2>
+            <span v-if="showAnnotated && hasAnnotatedFile" class="ai-badge">AI Processed</span>
+          </div>
+          <div class="header-right">
+            <!-- Toggle Switch (only show if annotated file exists) -->
+            <div v-if="hasAnnotatedFile" class="toggle-container">
+              <span class="toggle-label-text">Original</span>
+              <label class="toggle-switch-wrapper">
+                <input
+                  type="checkbox"
+                  v-model="showAnnotated"
+                  class="toggle-input"
                 />
-                <p class="fallback-text">Original file not available, showing thumbnail</p>
-              </div>
-              <div v-else class="no-preview">
-                <span class="no-preview-icon">🖼️</span>
-                <p>Image preview not available</p>
-              </div>
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="toggle-label-text active">Annotated</span>
             </div>
+            <!-- Open in new tab button -->
+            <button
+              v-if="currentMediaUrl"
+              @click="openCurrentInNewTab"
+              class="btn-open-new-tab"
+              title="Open in new tab"
+            >
+              ↗
+            </button>
+          </div>
+        </div>
 
-            <!-- Video Preview -->
-            <div v-else-if="fileData.file_type === 'video' || fileData.file_type === 'Video'" class="media-preview">
-              <video
-                v-if="currentMediaUrl"
+        <!-- Media Preview Container -->
+        <div class="preview-container">
+          <!-- Loading State - No files available yet -->
+          <div v-if="!hasAnyFile" class="media-preview">
+            <div class="loading-preview">
+              <div class="loading-spinner"></div>
+              <p>Processing file...</p>
+              <span class="loading-hint">Your file is being analyzed</span>
+            </div>
+          </div>
+
+          <!-- Image Preview -->
+          <div v-else-if="isImage" class="media-preview">
+            <img
+              v-if="currentMediaUrl"
+              :src="currentMediaUrl"
+              :alt="fileData.file_id"
+              class="preview-image"
+              :key="currentMediaUrl"
+              @error="handleMediaError"
+              @load="handleMediaLoad"
+            />
+            <div v-else-if="fileData.thumbnail_url" class="thumbnail-fallback">
+              <img
+                :src="fileData.thumbnail_url"
+                :alt="fileData.file_id"
+                class="preview-thumbnail"
+              />
+              <p class="fallback-text">Full resolution not available, showing thumbnail</p>
+            </div>
+            <div v-else class="no-preview">
+              <span class="no-preview-icon">🖼️</span>
+              <p>Image preview not available</p>
+            </div>
+          </div>
+
+          <!-- Video Preview -->
+          <div v-else-if="isVideo" class="media-preview">
+            <video
+              v-if="currentMediaUrl"
+              ref="mediaPlayerRef"
+              :src="currentMediaUrl"
+              controls
+              class="preview-video"
+              :key="currentMediaUrl"
+              @error="handleMediaError"
+              @loadeddata="handleMediaLoad"
+              @timeupdate="handleTimeUpdate"
+            >
+              Your browser does not support the video tag.
+            </video>
+            <div v-else-if="fileData.thumbnail_url" class="thumbnail-fallback">
+              <img
+                :src="fileData.thumbnail_url"
+                :alt="fileData.file_id"
+                class="preview-thumbnail"
+              />
+              <p class="fallback-text">Video not available, showing thumbnail</p>
+            </div>
+            <div v-else class="no-preview">
+              <span class="no-preview-icon">🎬</span>
+              <p>Video preview not available</p>
+            </div>
+          </div>
+
+          <!-- Audio Preview -->
+          <div v-else-if="isAudio" class="media-preview">
+            <div v-if="currentMediaUrl" class="audio-player-container">
+              <div class="audio-icon">🎵</div>
+              <audio
+                ref="mediaPlayerRef"
                 :src="currentMediaUrl"
                 controls
-                class="preview-video"
-                @error="handleVideoError"
+                class="preview-audio"
                 :key="currentMediaUrl"
+                @error="handleMediaError"
+                @loadeddata="handleMediaLoad"
+                @timeupdate="handleTimeUpdate"
               >
-                Your browser does not support the video tag.
-              </video>
-              <div v-else-if="fileData.thumbnail_url" class="thumbnail-fallback">
-                <img
-                  :src="fileData.thumbnail_url"
-                  :alt="fileData.file_id"
-                  class="preview-thumbnail"
-                />
-                <p class="fallback-text">Video file not available, showing thumbnail</p>
-              </div>
-              <div v-else class="no-preview">
-                <span class="no-preview-icon">🎬</span>
-                <p>Video preview not available</p>
+                Your browser does not support the audio tag.
+              </audio>
+            </div>
+            <div v-else class="no-preview">
+              <span class="no-preview-icon">🎵</span>
+              <p>Audio preview not available</p>
+            </div>
+          </div>
+
+          <!-- Unknown Type -->
+          <div v-else class="media-preview">
+            <div class="no-preview">
+              <span class="no-preview-icon">📄</span>
+              <p>Preview not available for this file type</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Status indicator -->
+        <div class="preview-status">
+          <span v-if="!hasAnnotatedFile && hasOriginalFile" class="status-processing">
+            <span class="pulse-dot"></span>
+            Processing with AI... Annotated file will appear when ready
+          </span>
+          <span v-else-if="showAnnotated && hasAnnotatedFile" class="status-annotated">
+            Showing AI-annotated version with detected objects highlighted
+          </span>
+          <span v-else-if="!showAnnotated && hasOriginalFile" class="status-original">
+            Showing original uploaded file
+          </span>
+        </div>
+
+        <!-- Species Timeline (Gantt Chart) - Only show for audio/video with tags_timestemp -->
+        <div v-if="(isVideo || isAudio) && hasTimelineData" class="timeline-section">
+          <div class="timeline-header">
+            <h3>🎯 Species Detection Timeline</h3>
+            <div class="timeline-legend">
+              <span class="legend-item">
+                <span class="legend-color current"></span>
+                Current position
+              </span>
+              <span class="legend-hint">Click on any bar to jump to that time</span>
+            </div>
+          </div>
+          
+          <!-- Timeline Container with two columns -->
+          <div class="timeline-container">
+            <!-- Left column: labels -->
+            <div class="timeline-labels-column">
+              <div class="axis-label-spacer"></div>
+              <div 
+                v-for="species in timelineSpecies" 
+                :key="'label-' + species.name"
+                class="species-label"
+                :title="species.name"
+              >
+                {{ species.name }}
               </div>
             </div>
 
-            <!-- Audio Preview -->
-            <div v-else-if="fileData.file_type === 'audio' || fileData.file_type === 'Audio'" class="media-preview">
-              <div v-if="currentMediaUrl" class="audio-player-container">
-                <div class="audio-icon">🎵</div>
-                <audio
-                  :src="currentMediaUrl"
-                  controls
-                  class="preview-audio"
-                  @error="handleAudioError"
-                  :key="currentMediaUrl"
+            <!-- Right column: time axis and bars -->
+            <div class="timeline-bars-column">
+              <!-- Time axis header -->
+              <div class="axis-ticks">
+                <span 
+                  v-for="tick in timelineTicks" 
+                  :key="tick.time"
+                  class="tick-label"
+                  :style="{ left: tick.position + '%' }"
                 >
-                  Your browser does not support the audio tag.
-                </audio>
+                  {{ tick.label }}
+                </span>
               </div>
-              <div v-else-if="fileData.thumbnail_url" class="thumbnail-fallback">
-                <img
-                  :src="fileData.thumbnail_url"
-                  :alt="fileData.file_id"
-                  class="preview-thumbnail"
-                />
-                <p class="fallback-text">Audio file not available, showing thumbnail</p>
-              </div>
-              <div v-else class="no-preview">
-                <span class="no-preview-icon">🎵</span>
-                <p>Audio preview not available</p>
-              </div>
-            </div>
 
-            <!-- Unknown Type -->
-            <div v-else class="media-preview">
-              <div class="no-preview">
-                <span class="no-preview-icon">📄</span>
-                <p>Preview not available for this file type</p>
+              <!-- Bars area with current time indicator -->
+              <div class="timeline-bars-area">
+                <!-- Current time indicator - now inside the bars area -->
+                <div 
+                  class="current-time-indicator" 
+                  :style="{ left: currentTimePosition + '%' }"
+                  v-if="currentTimePosition >= 0"
+                ></div>
+
+                <!-- Species bars rows -->
+                <div 
+                  v-for="species in timelineSpecies" 
+                  :key="'bars-' + species.name"
+                  class="species-bars"
+                >
+                  <div
+                    v-for="(segment, idx) in species.segments"
+                    :key="idx"
+                    class="segment-bar"
+                    :class="{ 'is-playing': isSegmentPlaying(segment) }"
+                    :style="{
+                      left: segment.startPercent + '%',
+                      width: segment.widthPercent + '%',
+                      backgroundColor: species.color
+                    }"
+                    :title="`${species.name}: ${segment.startTime} - ${segment.endTime}`"
+                    @click="seekToTime(segment.startSeconds)"
+                  >
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- File Information Section -->
+      <!-- File Information Section -->
+      <div class="info-wrapper">
         <section class="info-section">
           <h2>File Information</h2>
           
@@ -210,7 +327,7 @@
               @click="openAnnotated"
               class="btn btn-primary"
             >
-              <span>🎬</span> Open Annotated File
+              <span>🏷️</span> Open Annotated File
             </button>
             <button
               v-if="fileData.thumbnail_url"
@@ -242,7 +359,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import authService from '@/services/authService'
 import apiService from '@/services/apiService'
@@ -256,7 +373,35 @@ const fileData = ref({})
 const loading = ref(true)
 const error = ref('')
 const fileId = ref('')
-const showAnnotated = ref(false)
+const showAnnotated = ref(true) // Default to showing annotated file
+
+// Media player refs
+const mediaPlayerRef = ref(null)
+const currentPlayTime = ref(0)
+const mediaDuration = ref(0)
+
+// Species colors for the timeline
+const speciesColors = [
+  '#4CAF50', '#2196F3', '#FF9800', '#9C27B0', '#E91E63',
+  '#00BCD4', '#8BC34A', '#FF5722', '#673AB7', '#3F51B5',
+  '#009688', '#FFC107', '#795548', '#607D8B', '#F44336'
+]
+
+// File type helpers
+const isImage = computed(() => {
+  const type = fileData.value.file_type?.toLowerCase()
+  return type === 'image'
+})
+
+const isVideo = computed(() => {
+  const type = fileData.value.file_type?.toLowerCase()
+  return type === 'video'
+})
+
+const isAudio = computed(() => {
+  const type = fileData.value.file_type?.toLowerCase()
+  return type === 'audio'
+})
 
 const hasTags = computed(() => {
   return fileData.value.tags && Object.keys(fileData.value.tags).length > 0
@@ -277,18 +422,199 @@ const hasAnnotatedFile = computed(() => {
   return !!fileData.value.annotated_output_url
 })
 
+const hasOriginalFile = computed(() => {
+  return !!fileData.value.s3_url
+})
+
+const hasAnyFile = computed(() => {
+  return hasAnnotatedFile.value || hasOriginalFile.value
+})
+
+// Get current media URL based on toggle state
+// Priority: if showAnnotated is true and annotated exists, show annotated
+// Otherwise show original if available
 const currentMediaUrl = computed(() => {
-  // For video files, use annotated if toggle is on, otherwise use original
-  if ((fileData.value.file_type === 'video' || fileData.value.file_type === 'Video') && hasAnnotatedFile.value) {
-    return showAnnotated.value ? fileData.value.annotated_output_url : fileData.value.s3_url
+  if (showAnnotated.value && hasAnnotatedFile.value) {
+    return fileData.value.annotated_output_url
   }
-  // For other file types, always use original
-  return fileData.value.s3_url
+  return fileData.value.s3_url || null
 })
 
 const isProcessing = computed(() => {
   return !hasTags.value && (!fileData.value.thumbnail_url || !fileData.value.s3_url)
 })
+
+// ========== Timeline (Gantt Chart) Related ==========
+
+// Parse time string (HH:MM:SS or MM:SS) to seconds
+const parseTimeToSeconds = (timeStr) => {
+  if (!timeStr) return 0
+  const parts = timeStr.split(':').map(Number)
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  } else if (parts.length === 2) {
+    return parts[0] * 60 + parts[1]
+  }
+  return 0
+}
+
+// Format seconds to MM:SS or HH:MM:SS
+const formatSecondsToTime = (seconds) => {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+  }
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+// Parse DynamoDB format tags_timestemp to normalized array
+const parsedTimelineData = computed(() => {
+  const rawData = fileData.value.tags_timestemp
+  if (!rawData || !Array.isArray(rawData)) return []
+  
+  return rawData.map(item => {
+    // Handle DynamoDB format: { M: { species: { S: "..." }, start_time: { S: "..." }, ... } }
+    const data = item.M || item
+    
+    const species = data.species?.S || data.species || ''
+    const startTime = data.start_time?.S || data.start_time || ''
+    const endTime = data.end_time?.S || data.end_time || ''
+    
+    return {
+      species,
+      startTime,
+      endTime,
+      startSeconds: parseTimeToSeconds(startTime),
+      endSeconds: parseTimeToSeconds(endTime)
+    }
+  }).filter(item => item.species && item.startSeconds < item.endSeconds)
+})
+
+// Check if we have valid timeline data
+const hasTimelineData = computed(() => {
+  return parsedTimelineData.value.length > 0
+})
+
+// Calculate total duration from timeline data
+const timelineDuration = computed(() => {
+  if (!hasTimelineData.value) return 0
+  
+  // Use media duration if available, otherwise calculate from data
+  if (mediaDuration.value > 0) {
+    return mediaDuration.value
+  }
+  
+  const maxEnd = Math.max(...parsedTimelineData.value.map(item => item.endSeconds))
+  // Add 10% padding
+  return Math.ceil(maxEnd * 1.1)
+})
+
+// Group timeline data by species with segments
+const timelineSpecies = computed(() => {
+  if (!hasTimelineData.value) return []
+  
+  const speciesMap = new Map()
+  const duration = timelineDuration.value || 1
+  
+  parsedTimelineData.value.forEach(item => {
+    if (!speciesMap.has(item.species)) {
+      speciesMap.set(item.species, {
+        name: item.species,
+        segments: [],
+        color: ''
+      })
+    }
+    
+    const speciesData = speciesMap.get(item.species)
+    speciesData.segments.push({
+      startTime: item.startTime,
+      endTime: item.endTime,
+      startSeconds: item.startSeconds,
+      endSeconds: item.endSeconds,
+      startPercent: (item.startSeconds / duration) * 100,
+      widthPercent: ((item.endSeconds - item.startSeconds) / duration) * 100
+    })
+  })
+  
+  // Convert to array and assign colors
+  const result = Array.from(speciesMap.values())
+  result.forEach((species, index) => {
+    species.color = speciesColors[index % speciesColors.length]
+    // Sort segments by start time
+    species.segments.sort((a, b) => a.startSeconds - b.startSeconds)
+  })
+  
+  // Sort species by first appearance
+  result.sort((a, b) => {
+    const aFirst = a.segments[0]?.startSeconds || 0
+    const bFirst = b.segments[0]?.startSeconds || 0
+    return aFirst - bFirst
+  })
+  
+  return result
+})
+
+// Generate time axis ticks
+const timelineTicks = computed(() => {
+  const duration = timelineDuration.value
+  if (duration <= 0) return []
+  
+  const ticks = []
+  let interval = 30 // 30 seconds default
+  
+  if (duration > 600) interval = 120 // 2 minutes for > 10 min
+  else if (duration > 300) interval = 60 // 1 minute for > 5 min
+  else if (duration > 120) interval = 30 // 30 seconds for > 2 min
+  else interval = 15 // 15 seconds for short clips
+  
+  for (let t = 0; t <= duration; t += interval) {
+    ticks.push({
+      time: t,
+      label: formatSecondsToTime(t),
+      position: (t / duration) * 100
+    })
+  }
+  
+  return ticks
+})
+
+// Current time position as percentage
+const currentTimePosition = computed(() => {
+  const duration = timelineDuration.value
+  if (duration <= 0 || currentPlayTime.value < 0) return -1
+  return (currentPlayTime.value / duration) * 100
+})
+
+// Check if a segment is currently playing
+const isSegmentPlaying = (segment) => {
+  return currentPlayTime.value >= segment.startSeconds && 
+         currentPlayTime.value < segment.endSeconds
+}
+
+// Seek media to specific time
+const seekToTime = (seconds) => {
+  if (mediaPlayerRef.value) {
+    mediaPlayerRef.value.currentTime = seconds
+    // Also start playing if paused
+    if (mediaPlayerRef.value.paused) {
+      mediaPlayerRef.value.play()
+    }
+  }
+}
+
+// Handle time update from media player
+const handleTimeUpdate = () => {
+  if (mediaPlayerRef.value) {
+    currentPlayTime.value = mediaPlayerRef.value.currentTime
+    if (!mediaDuration.value && mediaPlayerRef.value.duration) {
+      mediaDuration.value = mediaPlayerRef.value.duration
+    }
+  }
+}
+
+// ========== End Timeline Related ==========
 
 const loadFileDetails = async () => {
   loading.value = true
@@ -383,16 +709,58 @@ const openAnnotated = () => {
   }
 }
 
-const handleImageError = () => {
-  console.error('Failed to load image')
+// Open current displayed media in new tab
+const openCurrentInNewTab = () => {
+  if (currentMediaUrl.value) {
+    window.open(currentMediaUrl.value, '_blank')
+  }
 }
 
-const handleVideoError = () => {
-  console.error('Failed to load video')
+// Unified media error handler
+const handleMediaError = (e) => {
+  const isAnnotated = showAnnotated.value && hasAnnotatedFile.value
+  console.error(`Failed to load ${isAnnotated ? 'annotated' : 'original'} media:`, currentMediaUrl.value, e)
+  
+  // If annotated file fails to load, fall back to original
+  if (isAnnotated && hasOriginalFile.value) {
+    console.log('Falling back to original file...')
+    showAnnotated.value = false
+  }
 }
 
-const handleAudioError = () => {
-  console.error('Failed to load audio')
+// Media load success handler
+const handleMediaLoad = () => {
+  console.log('Media loaded successfully:', showAnnotated.value ? 'annotated' : 'original')
+}
+
+// Toggle play/pause for media player
+const togglePlayPause = () => {
+  if (mediaPlayerRef.value) {
+    if (mediaPlayerRef.value.paused) {
+      mediaPlayerRef.value.play()
+    } else {
+      mediaPlayerRef.value.pause()
+    }
+  }
+}
+
+// Keyboard event handler for spacebar
+const handleKeydown = (event) => {
+  // Only handle spacebar
+  if (event.code === 'Space' || event.key === ' ') {
+    // Don't trigger if user is typing in an input/textarea
+    const activeElement = document.activeElement
+    const isInputFocused = activeElement && (
+      activeElement.tagName === 'INPUT' ||
+      activeElement.tagName === 'TEXTAREA' ||
+      activeElement.isContentEditable
+    )
+    
+    if (!isInputFocused && (isVideo.value || isAudio.value) && currentMediaUrl.value) {
+      event.preventDefault() // Prevent page scroll
+      togglePlayPause()
+    }
+  }
 }
 
 const goBack = () => {
@@ -405,6 +773,9 @@ const handleSignOut = () => {
 }
 
 onMounted(async () => {
+  // Add keyboard event listener for spacebar play/pause
+  window.addEventListener('keydown', handleKeydown)
+  
   try {
     // Get user info
     const session = await authService.getUserSession()
@@ -429,6 +800,11 @@ onMounted(async () => {
       loading.value = false
     }
   }
+})
+
+onUnmounted(() => {
+  // Remove keyboard event listener
+  window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
@@ -498,15 +874,9 @@ onMounted(async () => {
 }
 
 .details-main {
-  max-width: 1400px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 40px 30px;
-}
-
-.content-wrapper {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 40px;
 }
 
 section {
@@ -514,16 +884,404 @@ section {
   border-radius: 12px;
   padding: 30px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 30px;
 }
 
 .preview-section {
-  position: sticky;
-  top: 100px;
-  height: fit-content;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #f0f0f0;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.preview-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #333;
+  font-weight: 600;
+}
+
+.ai-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Toggle Switch Styles */
+.toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: #f5f7fa;
+  border-radius: 24px;
+}
+
+.toggle-label-text {
+  font-size: 0.85rem;
+  color: #999;
+  font-weight: 500;
+  transition: color 0.3s;
+}
+
+.toggle-label-text.active {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.toggle-switch-wrapper {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+  cursor: pointer;
+}
+
+.toggle-input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #ccc;
+  border-radius: 13px;
+  transition: background 0.3s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.3s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-input:checked + .toggle-slider {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.toggle-input:checked + .toggle-slider::before {
+  transform: translateX(22px);
+}
+
+.btn-open-new-tab {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 2px solid #667eea;
+  background: white;
+  color: #667eea;
+  font-size: 1.2rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.btn-open-new-tab:hover {
+  background: #667eea;
+  color: white;
 }
 
 .preview-container {
   width: 100%;
+  flex: 1;
+}
+
+/* Loading Preview State */
+.loading-preview {
+  padding: 80px 40px;
+  text-align: center;
+  color: #666;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+.loading-preview p {
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.loading-hint {
+  font-size: 0.9rem;
+  color: #999;
+}
+
+/* Preview Status Indicator */
+.preview-status {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.status-processing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #e65100;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: #e65100;
+  border-radius: 50%;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+.status-annotated {
+  color: #667eea;
+}
+
+.status-original {
+  color: #666;
+}
+
+/* ========== Timeline (Gantt Chart) Styles ========== */
+.timeline-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 2px solid #f0f0f0;
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.timeline-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #333;
+  font-weight: 600;
+}
+
+.timeline-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.legend-color.current {
+  background: #ff4444;
+}
+
+.legend-hint {
+  color: #999;
+  font-style: italic;
+}
+
+.timeline-container {
+  display: flex;
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+  gap: 0;
+}
+
+/* Left column: species labels */
+.timeline-labels-column {
+  flex-shrink: 0;
+  width: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.axis-label-spacer {
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.species-label {
+  height: 24px;
+  line-height: 24px;
+  padding-right: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #444;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Right column: time axis and bars */
+.timeline-bars-column {
+  flex: 1;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Time axis at the top */
+.axis-ticks {
+  position: relative;
+  height: 24px;
+  border-bottom: 1px solid #ddd;
+  flex-shrink: 0;
+}
+
+.tick-label {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.7rem;
+  color: #888;
+  white-space: nowrap;
+  top: 4px;
+}
+
+/* Bars area container */
+.timeline-bars-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Current time indicator - now inside bars area */
+.current-time-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ff4444;
+  z-index: 10;
+  pointer-events: none;
+  transform: translateX(-1px);
+}
+
+.current-time-indicator::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -4px;
+  width: 10px;
+  height: 10px;
+  background: #ff4444;
+  border-radius: 50%;
+}
+
+/* Species bars row */
+.species-bars {
+  position: relative;
+  height: 24px;
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+
+.segment-bar {
+  position: absolute;
+  top: 2px;
+  height: 20px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  opacity: 0.85;
+  min-width: 4px;
+}
+
+.segment-bar:hover {
+  opacity: 1;
+  transform: scaleY(1.15);
+  z-index: 5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.segment-bar.is-playing {
+  opacity: 1;
+  box-shadow: 0 0 0 2px #ff4444, 0 2px 8px rgba(255, 68, 68, 0.4);
+  z-index: 6;
+}
+
+/* ========== End Timeline Styles ========== */
+
+.info-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .media-preview {
@@ -533,11 +1291,18 @@ section {
   background: #f5f5f5;
 }
 
-.preview-image,
+.preview-image {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
 .preview-video {
   width: 100%;
   height: auto;
   display: block;
+  max-height: 80vh; /* 限制视频最大高度为屏幕高度的 80% */
+  object-fit: contain; /* 保持视频比例 */
 }
 
 .preview-audio {
@@ -767,71 +1532,6 @@ section {
   overflow-y: auto;
 }
 
-.toggle-container {
-  margin-bottom: 20px;
-  padding: 16px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-
-.toggle-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  user-select: none;
-}
-
-.toggle-text {
-  font-size: 0.95rem;
-  font-weight: 500;
-  color: #333;
-}
-
-.toggle-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-.toggle-switch {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-slider {
-  position: relative;
-  display: inline-block;
-  width: 50px;
-  height: 26px;
-  background: #ccc;
-  border-radius: 13px;
-  cursor: pointer;
-  transition: background 0.3s;
-}
-
-.toggle-slider::before {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
-  background: white;
-  border-radius: 50%;
-  transition: transform 0.3s;
-}
-
-.toggle-switch:checked + .toggle-slider {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.toggle-switch:checked + .toggle-slider::before {
-  transform: translateX(24px);
-}
-
 .actions-section {
   display: flex;
   gap: 12px;
@@ -914,16 +1614,6 @@ section {
   margin: 0 8px;
 }
 
-@media (max-width: 1024px) {
-  .content-wrapper {
-    grid-template-columns: 1fr;
-  }
-
-  .preview-section {
-    position: static;
-  }
-}
-
 @media (max-width: 768px) {
   .header-content {
     flex-direction: column;
@@ -934,6 +1624,68 @@ section {
     font-size: 1.4rem;
   }
 
+  .details-main {
+    padding: 20px 15px;
+  }
+
+  section {
+    padding: 20px;
+  }
+
+  .preview-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .toggle-container {
+    padding: 6px 12px;
+  }
+
+  .toggle-label-text {
+    font-size: 0.8rem;
+  }
+
+  .preview-header h2 {
+    font-size: 1.1rem;
+  }
+
+  /* Timeline responsive styles */
+  .timeline-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .timeline-legend {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .timeline-labels-column {
+    width: 80px;
+  }
+
+  .species-label {
+    font-size: 0.7rem;
+  }
+
+  .tick-label {
+    font-size: 0.6rem;
+  }
+
+  .timeline-container {
+    padding: 12px;
+  }
+
+  .timeline-bars-column {
+    min-width: 200px;
+  }
+
   .actions-section {
     flex-direction: column;
   }
@@ -941,6 +1693,15 @@ section {
   .actions-section .btn {
     width: 100%;
     justify-content: center;
+  }
+
+  .info-grid {
+    gap: 15px;
+  }
+
+  .preview-status {
+    font-size: 0.8rem;
+    padding: 10px 12px;
   }
 }
 </style>
