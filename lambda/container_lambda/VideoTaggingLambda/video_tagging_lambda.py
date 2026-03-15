@@ -9,6 +9,18 @@ import boto3
 from datetime import timedelta
 from typing import Tuple, Dict, List
 from botocore.exceptions import ClientError
+
+# ===== 设置 Lambda 环境变量（在导入库之前）=====
+# Lambda 环境中 /home/sbx_user1051/.config 是只读的，需要设置到 /tmp
+if not os.getenv("YOLO_CONFIG_DIR"):
+    os.environ["YOLO_CONFIG_DIR"] = "/tmp/ultralytics"
+if not os.getenv("MPLCONFIGDIR"):
+    os.environ["MPLCONFIGDIR"] = "/tmp/matplotlib"
+
+# 确保目录存在
+os.makedirs(os.environ["YOLO_CONFIG_DIR"], exist_ok=True)
+os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
+
 from ultralytics import YOLO
 import supervision as sv
 import cv2 as cv
@@ -19,6 +31,8 @@ VIDEO_BUCKET_ENV = os.getenv("VIDEO_S3")      # 可选：如果你希望 s3_url 
 THUMB_BUCKET   = os.getenv("THUMBNAILS_S3")
 METADATA_TABLE = os.getenv("METADATA_TABLE")
 MODEL_PATH     = os.getenv("MODEL_PATH", "/opt/model.pt")
+# 目标推理帧率，可通过环境变量 TARGET_FPS 调整（默认 5 fps）
+TARGET_FPS     = int(os.getenv("TARGET_FPS", "5"))
 
 s3_client  = boto3.client("s3", region_name=REGION)
 ddb_client = boto3.client("dynamodb", region_name=REGION)
@@ -177,103 +191,165 @@ def video_predict_unique_counts(video_path: str, confidence: float = 0.5) -> dic
 def video_predict_with_annotations(
     video_path: str,
     output_path: str,
-    confidence: float = 0.5
+    confidence: float = 0.5,
+    target_fps: int = 5
 ) -> Tuple[Dict, List]:
-
+    """
+    对视频进行鸟类识别，绘制边界框和标签，并返回统计和时间戳记录
+    
+    Args:
+        video_path: 输入视频路径
+        output_path: 输出视频路径
+        confidence: 置信度阈值
+        target_fps: 目标推理帧率，降低帧率可加速推理（默认5fps，每秒推理5帧）
+                   注意：输出视频保持原始帧率，但只在部分帧上进行推理
+    
+    Returns:
+        (counts_dict, time_records_list) 元组
+    """
     video_info = sv.VideoInfo.from_video_path(video_path=video_path)
-    fps = int(video_info.fps)
+    original_fps = int(video_info.fps)
     class_dict = get_model().names
+    
+    # 计算跳帧间隔，确保至少为1
+    frame_skip = max(1, int(original_fps / target_fps))
+    actual_inference_fps = original_fps / frame_skip  # 实际推理帧率
+    print(f"[INFO] Original FPS: {original_fps}, Target inference FPS: {target_fps}, Frame skip: {frame_skip}, Actual inference FPS: {actual_inference_fps:.2f}")
+    print(f"[INFO] Output video will maintain original FPS: {original_fps}")
 
     cap = cv.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError(f"cannot open video：{video_path}")
 
     model = get_model()
-    tracker = sv.ByteTrack(frame_rate=fps)
+    tracker = sv.ByteTrack(frame_rate=original_fps)  # 使用原始帧率进行跟踪
 
     box_annotator = sv.BoundingBoxAnnotator()
     label_annotator = sv.LabelAnnotator()
 
     tracker_info = {}
-    frame_count = 0
+    frame_count = 0  # 原始视频帧计数
+    inference_frame_count = 0  # 进行推理的帧计数
     time_records = []
+    
+    # 保存上一帧的检测结果，用于跳过帧的标注
+    last_detections = None
+    last_labels = []
 
     temp_output_path = output_path.replace('.mp4', '_temp.mp4')
+    
+    # 创建输出视频信息（使用原始帧率，保持完整帧率）
+    output_video_info = sv.VideoInfo(
+        width=video_info.width,
+        height=video_info.height,
+        fps=original_fps,  # 保持原始帧率
+        total_frames=video_info.total_frames
+    )
 
-    with sv.VideoSink(temp_output_path, video_info) as sink:
+    with sv.VideoSink(temp_output_path, output_video_info) as sink:
         unique_per_species = {}
 
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
+            
+            current_time = frame_count / original_fps  # 当前时间（秒），基于原始帧率
+            
+            # 判断是否需要在这一帧进行推理
+            should_infer = (frame_count % frame_skip == 0)
+            
+            if should_infer:
+                # 进行推理
+                result = model(frame)[0]
+                detections = sv.Detections.from_ultralytics(result)
+                detections = tracker.update_with_detections(detections=detections)
 
-            current_time = frame_count / fps
+                mask = detections.confidence > confidence
+                detections = detections[mask]
+                
+                # 保存当前检测结果，供后续跳过帧使用
+                last_detections = detections
+                labels = []  # 初始化当前帧的标签列表
+                last_labels = []  # 保存供跳过帧使用
+                
+                current_tracker_ids = set()
 
-            result = model(frame)[0]
-            detections = sv.Detections.from_ultralytics(result)
-            detections = tracker.update_with_detections(detections=detections)
+                if detections.tracker_id is not None:
+                    for trk_id, cls_id in zip(detections.tracker_id.tolist(), detections.class_id.tolist()):
+                        trk_id = int(trk_id)
+                        cls_id = int(cls_id)
+                        species = class_dict[cls_id]
+                        current_tracker_ids.add(trk_id)
 
-            mask = detections.confidence > confidence
-            detections = detections[mask]
+                        unique_per_species.setdefault(species, set()).add(trk_id)
 
-            current_tracker_ids = set()
+                        if trk_id not in tracker_info:
+                            tracker_info[trk_id] = {
+                                'species': species,
+                                'start_frame': frame_count,
+                                'start_time': current_time,
+                                'last_seen_frame': frame_count
+                            }
+                        else:
+                            tracker_info[trk_id]['last_seen_frame'] = frame_count
+                
+                # 生成标签（基于 class_id，不依赖 tracker_id）
+                if detections.class_id is not None and len(detections.class_id) > 0:
+                    for cls_id, conf in zip(detections.class_id.tolist(), detections.confidence.tolist()):
+                        species = class_dict[int(cls_id)]
+                        label = f"{species} {conf:.2f}"
+                        labels.append(label)
+                        last_labels.append(label)  # 同时保存到 last_labels
+                
+                inference_frame_count += 1
+            else:
+                # 跳过帧：使用上一帧的检测结果
+                # 简单复用上一帧的检测框和标签
+                # 注意：对于跳过帧，我们不更新跟踪器，保持上一帧的跟踪状态
+                detections = last_detections if last_detections is not None else sv.Detections.empty()
+                labels = last_labels.copy() if last_labels else []  # 安全地复制，如果为空则使用空列表
 
-            if detections.tracker_id is not None:
-                for trk_id, cls_id in zip(detections.tracker_id.tolist(), detections.class_id.tolist()):
-                    trk_id = int(trk_id)
-                    cls_id = int(cls_id)
-                    species = class_dict[cls_id]
-                    current_tracker_ids.add(trk_id)
+            # 处理消失的跟踪目标（只在推理帧检查，且当前有检测结果时）
+            if should_infer and detections.tracker_id is not None:
+                disappeared_trackers = []
+                for trk_id, info in tracker_info.items():
+                    if trk_id not in current_tracker_ids:
+                        # 检查是否真的消失了（使用原始帧率和帧计数计算时间差）
+                        if frame_count - info['last_seen_frame'] > original_fps * 0.5:  # 0.5秒未出现
+                            disappeared_trackers.append(trk_id)
 
-                    unique_per_species.setdefault(species, set()).add(trk_id)
+                for trk_id in disappeared_trackers:
+                    info = tracker_info[trk_id]
+                    end_time = info['last_seen_frame'] / original_fps  # 使用原始帧率计算时间
+                    time_records.append({
+                        'species': info['species'],
+                        'start': format_timestamp(info['start_time']),
+                        'end': format_timestamp(end_time)
+                    })
+                    del tracker_info[trk_id]
 
-                    if trk_id not in tracker_info:
-                        tracker_info[trk_id] = {
-                            'species': species,
-                            'start_frame': frame_count,
-                            'start_time': current_time,
-                            'last_seen_frame': frame_count
-                        }
-                    else:
-                        tracker_info[trk_id]['last_seen_frame'] = frame_count
-
-            disappeared_trackers = []
-            for trk_id, info in tracker_info.items():
-                if trk_id not in current_tracker_ids:
-                    if frame_count - info['last_seen_frame'] > fps * 0.5:
-                        disappeared_trackers.append(trk_id)
-
-            for trk_id in disappeared_trackers:
-                info = tracker_info[trk_id]
-                end_time = info['last_seen_frame'] / fps
-                time_records.append({
-                    'species': info['species'],
-                    'start': format_timestamp(info['start_time']),
-                    'end': format_timestamp(end_time)
-                })
-                del tracker_info[trk_id]
-
-            labels = []
-            if detections.tracker_id is not None:
-                for cls_id, conf in zip(detections.class_id.tolist(), detections.confidence.tolist()):
-                    species = class_dict[int(cls_id)]
-                    label = f"{species} {conf:.2f}"
-                    labels.append(label)
-
-            annotated_frame = box_annotator.annotate(scene=frame.copy(), detections=detections)
-            annotated_frame = label_annotator.annotate(scene=annotated_frame, detections=detections, labels=labels)
+            # 绘制标注（所有帧都绘制，跳过帧使用上一帧的检测结果）
+            if last_detections is not None:
+                annotated_frame = box_annotator.annotate(scene=frame.copy(), detections=detections)
+                annotated_frame = label_annotator.annotate(scene=annotated_frame, detections=detections, labels=labels)
+            else:
+                # 如果还没有任何检测结果，直接使用原帧
+                annotated_frame = frame.copy()
 
             sink.write_frame(annotated_frame)
             frame_count += 1
 
+        # 处理视频结束时仍在跟踪的目标
         for trk_id, info in tracker_info.items():
-            end_time = info['last_seen_frame'] / fps
+            end_time = info['last_seen_frame'] / original_fps  # 使用原始帧率计算时间
             time_records.append({
                 'species': info['species'],
                 'start': format_timestamp(info['start_time']),
                 'end': format_timestamp(end_time)
             })
+    
+    print(f"[INFO] Total frames: {frame_count}, Inference frames: {inference_frame_count}, Skipped frames: {frame_count - inference_frame_count}")
 
     cap.release()
 
@@ -311,6 +387,7 @@ def video_predict_with_annotations(
 
 # ===== 主 handler =====
 def handler(event, context):
+    print(f"[INFO] Using TARGET_FPS: {TARGET_FPS} (from environment variable)")
     print(f"[DEBUG] Raw Event: {json.dumps(event)}")
 
     detail = event.get("detail", {})
@@ -343,7 +420,12 @@ def handler(event, context):
         return {"statusCode": 500, "body": json.dumps({"error": f"S3 download failed: {e}"})}
 
     try:
-        counts, time_records = video_predict_with_annotations(tmp_video_path, tmp_annotated_video_path, confidence=0.5)
+        counts, time_records = video_predict_with_annotations(
+            tmp_video_path, 
+            tmp_annotated_video_path, 
+            confidence=0.5,
+            target_fps=TARGET_FPS
+        )
         print(f"[INFO] model run complete: {counts}")
         print(f"[INFO] time records count: {len(time_records)}")
     except Exception as e:
