@@ -20,11 +20,11 @@ This project aims to deliver a fully **event-driven serverless AWS architecture*
 
 ## Features
 
-![image-20260315110844266](C:\Users\Henry\AppData\Roaming\Typora\typora-user-images\image-20260315110844266.png)
+
 
 ### Upload files
 
-![image-20260315111522634](C:\Users\Henry\Desktop\private_project\bird-tag\prototype\webpage\bird-tag-frontend\image-20260315111522634.png)
+![image-20260315111522634](image-20260315111522634.png)
 
 
 
@@ -56,17 +56,17 @@ The **Species Detection Timeline** shows the appearance time of each detected sp
 
 **Video**:
 
-![image-20260315112439480](C:\Users\Henry\Desktop\private_project\bird-tag\prototype\webpage\bird-tag-frontend\image-20260315112439480.png)
+![image-20260315112439480](image-20260315112439480.png)
 
 
 
 **Audio**:
 
-![image-20260315114325340](C:\Users\Henry\Desktop\private_project\bird-tag\prototype\webpage\bird-tag-frontend\image-20260315114325340.png)
+![image-20260315114325340](image-20260315114325340.png)
 
 **Image**:
 
-![image-20260315114614998](C:\Users\Henry\Desktop\private_project\bird-tag\prototype\webpage\bird-tag-frontend\image-20260315114614998.png)
+![image-20260315114614998](image-20260315114614998.png)
 
 
 
@@ -74,7 +74,7 @@ The **Species Detection Timeline** shows the appearance time of each detected sp
 
 
 
-![birdtag_architecture](C:\Users\Henry\Desktop\private_project\bird-tag\prototype\webpage\bird-tag-frontend\birdtag_architecture.png)
+![birdtag_architecture](birdtag_architecture.png)
 
 
 
